@@ -1,0 +1,25 @@
+# Training Boston dataset to predict the median house prices
+
+library(MASS)
+library(randomForest)
+set.seed(1)
+
+#####Random forests#####
+train=sample(1:nrow(Boston),300)
+dim(Boston)
+rf.boston=randomForest(medv~.,data=Boston,subset=train)  
+rf.boston
+
+#Tune mtry
+#mtry = # of variables at each split, tuning parameter (sqrt of 13 predictors is default number of predictors chosen)
+oob.err=double(13)  #consider from 1 to 13 splits
+test.err=double(13)
+for (mtry in 1:13){
+  fit=randomForest(medv~.,data=Boston,subset=train,mtry=mtry,ntree=400)  #do 400 trees each time
+  oob.err[mtry]=fit$mse[400]
+  pred=predict(fit,Boston[-train,])
+  test.err[mtry]=with(Boston[-train,],mean((medv-pred)^2))
+  cat(mtry," ")  #will plot where you are in iterations
+}
+matplot(1:mtry,cbind(test.err,oob.err),pch=10,col=c("red","blue"),type="b",ylab="MSE")
+legend("topright",legend=c("Test","OOB"),pch=19,col=c("red","blue"))
