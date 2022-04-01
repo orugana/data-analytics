@@ -1,0 +1,120 @@
+
+library(data.table)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(corrplot)
+library(caret)
+
+diabetic_data = read.table("C:\\Users\\aruna\\Documents\\USCF Datascience interview prep\\dataset_diabetes\\diabetic_data.csv",header = TRUE,sep = ",")
+
+diabetic_data60_70 = diabetic_data[diabetic_data$age == "[60-70)",]
+
+# To fnd the relation between age and readmission as both of them are categorical variables we can do a chi-square test
+
+head(diabetic_data60_70)
+diabetic_data$age = as.factor(diabetic_data$age)
+diabetic_data$readmitted = as.factor(diabetic_data$readmitted)
+diabetic_data60_70$age = as.factor(diabetic_data60_70$age)
+diabetic_data60_70$readmitted = as.factor(diabetic_data60_70$readmitted)
+tbl = table(diabetic_data60_70$age,diabetic_data60_70$readmitted)
+tbl1 = table(diabetic_data$age,diabetic_data$readmitted)
+
+#We'll be using the chi-square test to determine the association between the two categorical variables, age and readmitted. 
+#We begin by specifying the null and alternative hypothesis, 
+#Null Hypothesis H0: The two variables age[60-70] and readmitted are independent of each other.
+#Alternate Hypothesis H1: The two variables are related to each other.
+
+prop.table(tbl)
+chisq.test(tbl) 
+
+##Interpretation :
+Since the p-value is less than 2.2e-16, we reject the null hypothesis that the age[60-70] of the diabetic patients is not associated with the readmitted status. But only 11% of the patients in the age group (60-70) are being readmitted within 30 days.
+
+##1 b. Next we would like to study significance between no of procedures and readmission. For this let's consuct ANOVA test and see the P_value
+
+aov_proc = aov(diabetic_data$num_lab_procedures ~ diabetic_data$readmitted)
+summary(aov_proc)
+
+##Interpretation :
+Since the p-value is less than <2e-16, we can say that no of lab procedures is significantly assosiated with  readmitted status.
+
+#2. Build a model to predict hospital readmission within 30 days of discharge. 
+Choose appropriate evaluation metrics and briefly discuss whether the model is accurate 
+enough and ethically fair to be operationalized.
+
+```{r}
+summary(diabetic_data)
+# Removing weight,payer code and medical specialty due to very few data 
+data <- select(diabetic_data,  -encounter_id, -patient_nbr, -weight,-payer_code,-medical_specialty)
+
+# To find significance of numerical variables 
+data_cat = data[,c(1:3,14:16,18:45)]
+numeric_data<-select_if(data,is.numeric)
+
+
+
+c <- cor(numeric_data, use= "pairwise.complete.obs")
+corrplot(c)
+
+summary(numeric_data)
+
+#from the correlation plot taking only few features
+numerical_data1 =
+
+
+#converting categorical data to factors 
+data_cat = lapply(data_cat, as.factor)
+
+data2 = cbind(numeric_data,data_cat)
+
+#Coverting target variable into 2 classes for ease of prediction (<30 readmission or not)
+data2$readmission = ifelse(data2$readmitted=="<30","1","0")
+data2$readmission=as.factor(data2$readmission)
+data3 = select(data2,4:14,44,46)
+#data3$admission_type_id =as.factor(data3$admission_type_id)
+#data3$discharge_disposition_id=as.factor(data3$discharge_disposition_id)
+#data3$admission_source_id = as.factor(data3$admission_source_id)
+table(data3$readmission)
+# From the data it indicates that the dataset is imbalanced (only about 9% have <30 daya readmission)
+
+#Model Training
+set.seed(100)
+inTrain <- createDataPartition(y = data3$readmission, p = .7,list = FALSE)
+train <- data3[ inTrain,]
+test <- data3[-inTrain,]
+nrow(train)
+nrow(test) 
+
+
+logit_model <- glm(readmission ~., data=train, family=binomial(link = 'logit'))
+summary(logit_model)
+plot(logit_model)
+pred_logit <- predict(logit_model,test, type = "response")
+
+pred_logit <- ifelse(pred_logit > 0.5, 1, 0)
+#pred_logit
+result<-as.data.frame(table(pred_logit,test$readmission))
+#result
+CorrectlyPredicted <- result[1,3]+result[4,3]
+CorrectlyPredicted
+accuracy <-CorrectlyPredicted/nrow(test)
+accuracy
+senstivity_model<-result[4,3]/(result[2,3]+result[4,3])
+senstivity_model
+specificity_model<-result[1,3]/(result[3,3]+result[1,3])
+specificity_model
+
+From the P-values it suggests that race and gender are not significant features 
+
+According to the results even tough accuracy is 88.8% ,but we cannot just take accuracy into account as the dataset is imbalanced.
+Considering the True positive rate(Sensitivity) is only 44.6% which idicates that with the considered features it identifies out of the predicted values correctly 
+Specificity : 88.9% of the time the model is able to identify >30 or no readmissions correctly. Which is also very important as we don't want them to be wrongly identified as <30 day readmission patient.
+
+I think that we can improve the model performance by indepth analysing some other features which were dropped for ease of analysis.
+
+Most important features are clinical in nature and demographic features do not show up as important predictors.
+So, I don't see any ethical issues in deploying this model.
+
